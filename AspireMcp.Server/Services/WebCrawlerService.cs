@@ -1,50 +1,58 @@
 namespace AspireMcp.Server.Services;
 
+internal sealed record class WebCrawlerOptions(string RootUrl)
+{
+    internal string BaseAddress { get; } = new Uri(RootUrl).GetLeftPart(UriPartial.Authority);
+}
+
 internal sealed class WebCrawlerService(
     HttpClient client,
     WebContentReader reader,
     ILogger<WebCrawlerService> logger)
 {
-    public async Task ScrapeWebsiteAsync(string rootUrl = "https://learn.microsoft.com/dotnet/aspire")
-    {
-        var robotsTxtUrl = $"{rootUrl.TrimEnd('/')}/robots.txt";
+    private const string RobotsText = "robots.txt";
+    private const string Sitemap = "Sitemap:";
+    private const string Url = "url";
+    private const string Loc = "loc";
 
-        var robotsContent = await GetUrlContentAsync(robotsTxtUrl);
+    internal async Task StartCrawlingWebsiteAsync(WebCrawlerOptions options, CancellationToken token)
+    {
+        var robotsTxtUrl = $"{options.BaseAddress}/{RobotsText}";
+
+        var robotsContent = await GetUrlContentAsync(robotsTxtUrl, token);
 
         if (string.IsNullOrEmpty(robotsContent))
         {
-            logger.LogInformation("Could not fetch robots.txt.");
+            logger.LogInformation("Could not fetch {File}.", robotsTxtUrl);
 
             return;
         }
 
         var sitemapUrls = ParseRobotsTxtForSitemaps(robotsContent);
 
-        foreach (var sitemapUrl in sitemapUrls)
+        await Parallel.ForEachAsync(sitemapUrls, async (sitemapUrl, token) =>
         {
             logger.LogInformation("Found sitemap: {SitemapUrl}", sitemapUrl);
 
-            await ScrapeSitemapAsync(sitemapUrl);
-        }
+            await ScrapeSitemapAsync(sitemapUrl, token);
+        });
     }
 
-    // Step 2: Fetch robots.txt content
-    public async Task<string> GetUrlContentAsync(string url)
+    private async Task<string> GetUrlContentAsync(string url, CancellationToken token)
     {
         try
         {
-            return await client.GetStringAsync(url);
+            return await client.GetStringAsync(url, token);
         }
         catch (Exception ex)
         {
             logger.LogError("Error fetching {Url}: {Message}", url, ex.Message);
 
-            return string.Empty;
+            return "Unable to get content from URL";
         }
     }
 
-    // Step 3: Parse robots.txt for Sitemap URLs
-    public static HashSet<string> ParseRobotsTxtForSitemaps(string robotsContent)
+    private static HashSet<string> ParseRobotsTxtForSitemaps(string robotsContent)
     {
         var sitemapUrls = new HashSet<string>();
 
@@ -52,9 +60,10 @@ internal sealed class WebCrawlerService(
 
         foreach (var line in lines)
         {
-            if (line.StartsWith("Sitemap:", StringComparison.OrdinalIgnoreCase))
+            if (line.StartsWith(Sitemap, StringComparison.OrdinalIgnoreCase))
             {
-                var sitemapUrl = line["Sitemap:".Length..].Trim();
+                var sitemapUrl = line[Sitemap.Length..].Trim();
+
                 sitemapUrls.Add(sitemapUrl);
             }
         }
@@ -62,10 +71,9 @@ internal sealed class WebCrawlerService(
         return sitemapUrls;
     }
 
-    // Step 4: Scrape and parse the sitemap(s)
-    public async Task ScrapeSitemapAsync(string sitemapUrl)
+    private async Task ScrapeSitemapAsync(string sitemapUrl, CancellationToken token)
     {
-        var sitemapContent = await GetUrlContentAsync(sitemapUrl);
+        var sitemapContent = await GetUrlContentAsync(sitemapUrl, token);
 
         if (string.IsNullOrEmpty(sitemapContent))
         {
@@ -76,16 +84,15 @@ internal sealed class WebCrawlerService(
 
         var urls = ParseSitemap(sitemapContent);
 
-        foreach (var url in urls)
+        await Parallel.ForEachAsync(urls, async (url, token) =>
         {
             logger.LogInformation("Scraping URL: {Url}", url);
 
-            await ScrapePageAsync(url);
-        }
+            await reader.ScrapeContentAsync(url);
+        });
     }
 
-    // Step 5: Parse the sitemap XML to extract URLs
-    public HashSet<string> ParseSitemap(string sitemapContent)
+    private HashSet<string> ParseSitemap(string sitemapContent)
     {
         var urls = new HashSet<string>();
 
@@ -93,9 +100,9 @@ internal sealed class WebCrawlerService(
         {
             var doc = XDocument.Parse(sitemapContent);
 
-            foreach (var urlElement in doc.Descendants("url"))
+            foreach (var urlElement in doc.Descendants(Url))
             {
-                var locElement = urlElement.Element("loc");
+                var locElement = urlElement.Element(Loc);
 
                 if (locElement is not null)
                 {
@@ -109,10 +116,5 @@ internal sealed class WebCrawlerService(
         }
 
         return urls;
-    }
-
-    public async Task<string> ScrapePageAsync(string url)
-    {
-        return await reader.ScrapeContentAsync(url);
     }
 }

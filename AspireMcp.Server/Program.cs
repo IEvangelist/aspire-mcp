@@ -15,4 +15,11 @@ builder.Services.AddMcpServer()
 
 using var app = builder.Build();
 
+var crawler = app.Services.GetRequiredService<WebCrawlerService>();
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+
+await crawler.StartCrawlingWebsiteAsync(
+    new("https://learn.microsoft.com/dotnet/aspire"),
+    lifetime.ApplicationStopping);
+
 await app.RunAsync();
