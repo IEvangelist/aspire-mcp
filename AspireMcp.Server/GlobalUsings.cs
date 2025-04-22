@@ -1,3 +1,4 @@
+global using AspireMcp.Server.Services;
 global using AspireMcp.Server.Tools;
 
 global using HtmlAgilityPack;

@@ -7,10 +7,11 @@ builder.Logging.AddConsole(consoleLogOptions =>
 });
 
 builder.Services.AddMemoryCache();
-builder.Services
-       .AddMcpServer()
-       .WithStdioServerTransport()
-       .WithTools<WebContentTool>();
+builder.Services.AddSingleton<WebContentReader>();
+builder.Services.AddSingleton<WebCrawlerService>();
+builder.Services.AddMcpServer()
+                .WithStdioServerTransport()
+                .WithTools<WebContentTool>();
 
 using var app = builder.Build();
 
