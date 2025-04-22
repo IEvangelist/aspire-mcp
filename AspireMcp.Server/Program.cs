@@ -6,6 +6,7 @@ builder.Logging.AddConsole(consoleLogOptions =>
     consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
 });
 
+builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<WebContentReader>();
 builder.Services.AddSingleton<WebCrawlerService>();
@@ -18,8 +19,8 @@ using var app = builder.Build();
 var crawler = app.Services.GetRequiredService<WebCrawlerService>();
 var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
-await crawler.StartCrawlingWebsiteAsync(
+var crawlTask = crawler.StartCrawlingWebsiteAsync(
     new("https://learn.microsoft.com/dotnet/aspire"),
     lifetime.ApplicationStopping);
 
-await app.RunAsync();
+await Task.WhenAll(crawlTask, app.RunAsync());
